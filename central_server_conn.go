@@ -9,8 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// const SERVER_HOST = "dhwani.gurupras.me"
-const SERVER_HOST = "localhost:17777"
+const SERVER_HOST = "dhwani-backend.gurupras.me"
 
 type SignalPacket struct {
 	From string `json:"from"`
