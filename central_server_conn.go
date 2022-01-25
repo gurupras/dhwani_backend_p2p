@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/recws-org/recws"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -18,8 +20,23 @@ type SignalPacket struct {
 	Data string `json:"data"`
 }
 
+type ServerConnection interface {
+	ReadMessage() (int, []byte, error)
+	WriteMessage(int, []byte) error
+	Close() error
+}
+
+type reconnectingConnWrapper struct {
+	*recws.RecConn
+}
+
+func (r *reconnectingConnWrapper) Close() error {
+	r.RecConn.Close()
+	return nil
+}
+
 type ServerConn struct {
-	*websocket.Conn
+	ServerConnection
 	signalCallbacks []func(SignalPacket)
 	wg              sync.WaitGroup
 	mutex           sync.Mutex
@@ -28,7 +45,7 @@ type ServerConn struct {
 }
 
 func (s *ServerConn) Close() error {
-	s.Conn.Close()
+	s.ServerConnection.Close()
 	return nil
 }
 
@@ -64,13 +81,14 @@ func (s *ServerConn) Loop() {
 			log.Infof("Starting server connection loop ...\n")
 			once = true
 		}
-		_, rawMessage, err := s.Conn.ReadMessage()
+		_, rawMessage, err := s.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err) {
 				log.Debugf("Connection closed")
 				break
+			} else {
+				// log.Errorf("Failed to read message from server connection: %v\n", err)
 			}
-			// log.Errorf("Failed to read message from server connection: %v\n", err)
 			continue
 		}
 		var msg map[string]interface{}
@@ -108,23 +126,27 @@ func (s *ServerConn) Stop() {
 	s.wg.Wait()
 }
 
-func NewServerConnection(id string) (*ServerConn, error) {
-	u := url.URL{Scheme: "ws", Host: SERVER_HOST, Path: "/ws"}
+func NewServerConnection(id string, autoReconnect bool) (*ServerConn, error) {
+	var err error
+	u := url.URL{Scheme: "wss", Host: SERVER_HOST, Path: "/ws"}
 	q := u.Query()
 	q.Set("id", id)
 	u.RawQuery = q.Encode()
 	log.Infof("connecting to %s\n", u.String())
 
-	var conn *websocket.Conn
-	// ws := recws.RecConn{
-	// 	KeepAliveTimeout: 10000 * time.Second,
-	// 	NonVerbose:       true,
-	// }
-	// ws.Dial(u.String(), nil)
-
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		log.Fatal("dial:", err)
+	var conn ServerConnection
+	if autoReconnect {
+		ws := recws.RecConn{
+			KeepAliveTimeout: 10000 * time.Second,
+			NonVerbose:       true,
+		}
+		ws.Dial(u.String(), nil)
+		conn = &reconnectingConnWrapper{&ws}
+	} else {
+		conn, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
+		if err != nil {
+			log.Fatal("dial:", err)
+		}
 	}
 
 	return &ServerConn{

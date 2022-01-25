@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 	p2p "github.com/gurupras/dhwani_backend_p2p"
+	"github.com/gurupras/dhwani_backend_p2p/alsa"
+	"github.com/gurupras/dhwani_backend_p2p/record"
 	"github.com/gurupras/dhwani_backend_p2p/rtp/audio"
 	"github.com/pion/webrtc/v3"
 	log "github.com/sirupsen/logrus"
@@ -37,7 +39,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 func reader(conn *websocket.Conn) {
 	log.Infof("Starting reader\n")
-
+	var audioProcess *exec.Cmd
 	for {
 		// read in a message
 		messageType, p, err := conn.ReadMessage()
@@ -54,19 +56,28 @@ func reader(conn *websocket.Conn) {
 			continue
 		}
 
+		response := make(map[string]interface{})
+		sendResponse := func() {
+			log.Debugf("Sending back '%v'\n", response["action"])
+			b, _ := json.Marshal(response)
+			if err = conn.WriteMessage(websocket.TextMessage, b); err != nil {
+				log.Errorf("Failed to send '%v': %v\n", response["action"], err)
+				return
+			}
+		}
+
 		action := msg["action"].(string)
 		log.Debugf("action=%v\n", action)
 		switch action {
-		case "ping":
+		case "get-devices":
 			{
-				data := make(map[string]interface{})
-				data["action"] = "pong"
-				data["timestamp"] = time.Now().UnixMilli()
-				b, _ := json.Marshal(data)
-				if err = conn.WriteMessage(websocket.TextMessage, b); err != nil {
-					log.Errorf("Failed to send pong: %v\n", err)
+				devices, err := alsa.ListDevicesWithLib()
+				response["action"] = "get-devices-response"
+				response["data"] = devices
+				if err != nil {
+					response["error"] = err.Error()
 				}
-				log.Debugf("Sending back pong")
+				sendResponse()
 			}
 		case "start-rtp-server":
 			{
@@ -84,15 +95,30 @@ func reader(conn *websocket.Conn) {
 				audioRTP = audio.SetupExternalRTP(port)
 				go audioRTP.Loop()
 
-				answerData := make(map[string]interface{})
-				answerData["action"] = "started-rtp-server"
-				answerData["data"] = ID
-				b, _ := json.Marshal(answerData)
-				if err = conn.WriteMessage(websocket.TextMessage, b); err != nil {
-					log.Errorf("Failed to send started-rtp-server: %v\n", err)
+				response["action"] = "started-rtp-server"
+				response["data"] = ID
+				sendResponse()
+				log.Debugf("Started RTP server on port=%v\n", port)
+			}
+		case "start-audio-stream":
+			{
+				response["action"] = "started-audio-stream"
+
+				identifier, ok := msg["data"].(string)
+				if !ok {
+					response["error"] = "Must specify a device identifier in the 'data' field"
+					sendResponse()
 					return
 				}
-				log.Debugf("Started RTP server on port=%v\n", port)
+				if audioProcess != nil {
+					audioProcess.Process.Kill()
+				}
+				audioProcess := record.NewRecorder(identifier, audioRTP.Port)
+				if err = audioProcess.Start(); err != nil {
+					log.Errorf("Failed to start audio process: %v\n", err)
+
+				}
+				sendResponse()
 			}
 		}
 	}
@@ -122,15 +148,11 @@ func main() {
 	ID = "111111111"
 	log.Infof("ID=%v\n", ID)
 
-	serverConn, err = p2p.NewServerConnection(ID)
+	serverConn, err = p2p.NewServerConnection(ID, true)
 	if err != nil {
 		log.Fatalf("Failed to set up server connection")
 	}
 	go serverConn.Loop()
-
-	// TODO: Remove this
-	audioRTP = audio.SetupExternalRTP(3131)
-	go audioRTP.Loop()
 
 	pcMap := make(map[string]*webrtc.PeerConnection)
 

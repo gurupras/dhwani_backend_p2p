@@ -6,44 +6,50 @@ import (
 	"net"
 	"sync"
 
+	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
 	log "github.com/sirupsen/logrus"
 )
 
 type AudioRTP struct {
-	port     int
+	Port     int
 	listener *net.UDPConn
-	Track    *webrtc.TrackLocalStaticRTP
+	Track    *webrtc.TrackLocalStaticSample
 	mutex    sync.Mutex
 	wg       sync.WaitGroup
 	running  bool
 	stopped  bool
 }
 
-func (rtp *AudioRTP) Loop() {
-	rtp.mutex.Lock()
-	rtp.running = true
-	rtp.stopped = false
-	rtp.mutex.Unlock()
+func (artp *AudioRTP) Loop() {
+	artp.mutex.Lock()
+	artp.running = true
+	artp.stopped = false
+	artp.mutex.Unlock()
 	inboundRTPPacket := make([]byte, 1600) // UDP MTU
-	rtp.wg.Add(1)
+	artp.wg.Add(1)
 	defer func() {
-		rtp.mutex.Lock()
-		defer rtp.mutex.Unlock()
-		rtp.stopped = true
-		rtp.wg.Done()
+		artp.mutex.Lock()
+		defer artp.mutex.Unlock()
+		artp.stopped = true
+		artp.wg.Done()
 	}()
 
 	defer func() {
-		rtp.listener.Close()
+		artp.listener.Close()
 	}()
 
 	once := false
+	audioBuilder := samplebuilder.New(3, &codecs.OpusPacket{}, 48000)
+
 	for {
+		packet := &rtp.Packet{}
 		if !once {
-			log.Infof("Started audio RTP loop on port %v", rtp.port)
+			log.Infof("Started audio RTP loop on port %v", artp.Port)
 		}
-		n, _, err := rtp.listener.ReadFrom(inboundRTPPacket)
+		n, _, err := artp.listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
 			log.Errorf("Error reading RTP packet: %v\n", err)
 			return
@@ -52,15 +58,27 @@ func (rtp *AudioRTP) Loop() {
 			log.Debugf("Received UDP packet")
 			once = true
 		}
-		if _, err = rtp.Track.Write(inboundRTPPacket[:n]); err != nil {
-			if errors.Is(err, io.ErrClosedPipe) {
-				// The peerConnection has been closed.
+
+		if err = packet.Unmarshal(inboundRTPPacket[:n]); err != nil {
+			log.Fatalf("Failed to unmarshal RTP packet: %v\n", err)
+		}
+		audioBuilder.Push(packet)
+		for {
+			sample := audioBuilder.Pop()
+			if sample == nil {
 				break
 			}
-			panic(err)
+
+			if writeErr := artp.Track.WriteSample(*sample); writeErr != nil {
+				if errors.Is(err, io.ErrClosedPipe) {
+					// The peerConnection has been closed.
+					break
+				}
+				panic(err)
+			}
 		}
 	}
-	log.Debugf("Stopped audio RTP loop")
+	// log.Debugf("Stopped audio RTP loop")
 }
 
 func (rtp *AudioRTP) Stop() {
@@ -81,7 +99,7 @@ func SetupExternalRTP(port int) *AudioRTP {
 	}
 
 	// Create audio track
-	audioTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
+	audioTrack, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion")
 	if err != nil {
 		panic(err)
 	}
