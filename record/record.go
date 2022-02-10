@@ -8,14 +8,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type recorder struct {
+type subprocessRecorder struct {
 	cmdline string
 	proc    *exec.Cmd
 }
 
-func (r *recorder) Start() error {
-	stdout, _ := r.proc.StdoutPipe()
-	stderr, _ := r.proc.StderrPipe()
+func (s *subprocessRecorder) Start() error {
+	stdout, _ := s.proc.StdoutPipe()
+	stderr, _ := s.proc.StderrPipe()
 	go func() {
 		log.Debugf("Start stdout reader\n")
 		defer func() {
@@ -40,11 +40,11 @@ func (r *recorder) Start() error {
 			fmt.Println(m)
 		}
 	}()
-	return r.proc.Start()
+	return s.proc.Start()
 }
 
-func (r *recorder) Stop() error {
-	return r.proc.Process.Kill()
+func (s *subprocessRecorder) Stop() error {
+	return s.proc.Process.Kill()
 }
 
 type Recorder interface {

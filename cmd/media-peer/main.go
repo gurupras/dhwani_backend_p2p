@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 
 	"github.com/gorilla/websocket"
 	p2p "github.com/gurupras/dhwani_backend_p2p"
-	"github.com/gurupras/dhwani_backend_p2p/alsa"
+	"github.com/gurupras/dhwani_backend_p2p/devices"
 	"github.com/gurupras/dhwani_backend_p2p/record"
 	"github.com/gurupras/dhwani_backend_p2p/rtp/audio"
 	"github.com/pion/webrtc/v3"
@@ -39,7 +38,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 func reader(conn *websocket.Conn) {
 	log.Infof("Starting reader\n")
-	var audioProcess *exec.Cmd
+	var recorder record.Recorder
 	for {
 		// read in a message
 		messageType, p, err := conn.ReadMessage()
@@ -71,7 +70,7 @@ func reader(conn *websocket.Conn) {
 		switch action {
 		case "get-devices":
 			{
-				devices, err := alsa.ListDevicesWithLib()
+				devices, err := devices.GetAudioDevices()
 				response["action"] = "get-devices-response"
 				response["data"] = devices
 				if err != nil {
@@ -110,13 +109,23 @@ func reader(conn *websocket.Conn) {
 					sendResponse()
 					return
 				}
-				if audioProcess != nil {
-					audioProcess.Process.Kill()
+				if recorder != nil {
+					recorder.Stop()
 				}
-				audioProcess := record.NewRecorder(identifier, audioRTP.Port)
-				if err = audioProcess.Start(); err != nil {
-					log.Errorf("Failed to start audio process: %v\n", err)
-
+				recorder, err = record.NewRecorder(identifier, audioRTP.Port)
+				if err != nil {
+					msg := fmt.Sprintf("Failed to start recorder: %v", err)
+					log.Errorf("%v\n", msg)
+					response["error"] = msg
+					sendResponse()
+					return
+				}
+				if err = recorder.Start(); err != nil {
+					msg := fmt.Sprintf("Failed to start audio process: %v", err)
+					log.Errorf("%v\n", msg)
+					response["error"] = msg
+					sendResponse()
+					return
 				}
 				sendResponse()
 			}

@@ -10,11 +10,14 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/yobert/alsa v0.0.0-20200618200352-d079056f5370
+	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
 replace github.com/recws-org/recws v1.4.0 => github.com/digitalocean/recws v1.3.1
 
 require (
+	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
+	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
