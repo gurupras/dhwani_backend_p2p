@@ -3,6 +3,9 @@ module github.com/gurupras/dhwani_backend_p2p
 go 1.17
 
 require (
+	github.com/alecthomas/kingpin v2.2.6+incompatible
+	github.com/crow-misia/go-libsoundio v0.0.0-20210813154600-411fd7d7c814
+	github.com/glycerine/rbuf v0.0.0-20190314090850-75b78581bebe
 	github.com/gorilla/websocket v1.4.2
 	github.com/pion/rtp v1.7.4
 	github.com/pion/webrtc/v3 v3.1.15
@@ -10,11 +13,14 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/yobert/alsa v0.0.0-20200618200352-d079056f5370
+	gopkg.in/hraban/opus.v2 v2.0.0-20220302220929-eeacdbcb92d0
 )
 
 replace github.com/recws-org/recws v1.4.0 => github.com/digitalocean/recws v1.3.1
 
 require (
+	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
+	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
